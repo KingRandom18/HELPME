@@ -1,0 +1,148 @@
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local PlayerData = DataStoreService:GetDataStore("PlayerData")
+local serverstorae= game:GetService("ServerScriptService")
+local FormatNumber = require(serverstorae.FormatNumber.Simple)
+
+
+
+local function LeaderboardSetup(value)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+
+	
+	local money = Instance.new("StringValue")
+	money.Name = "Money"
+	money.Value = value  
+	money.Parent = leaderstats
+
+	
+	local Value = Instance.new("StringValue")
+	Value.Name = "Value"
+	Value.Value = 10  
+	Value.Parent = leaderstats
+	
+
+	return leaderstats
+end
+
+local function LoadData(player)
+	local success, result = pcall(function()
+		return PlayerData:GetAsync(player.UserId)
+	end)
+	if not success then
+		warn(result)
+	end
+	return success, result
+end
+
+local function SaveData(player, data)
+	local success, result = pcall(function()
+		PlayerData:SetAsync(player.UserId, data)
+	end)
+	if not success then
+		warn(result)
+	end
+	return success
+end
+
+local sessionData = {}
+
+
+local playerAdded = Instance.new("BindableEvent")
+local playerRemvoing = Instance.new("BindableEvent")
+
+local PlayeManger = {}
+
+PlayeManger.PlayerAdded = playerAdded.Event
+PlayeManger.PlayerRemoving = playerRemvoing.Event
+
+function PlayeManger.Start()
+	for _, player in ipairs(Players:GetPlayers()) do
+		coroutine.wrap(PlayeManger.OnPlayerAdded)(player)
+	end
+
+	Players.PlayerAdded:Connect(PlayeManger.OnPlayerAdded)
+	Players.PlayerRemoving:Connect(PlayeManger.OnPlayerRemoving)
+	
+	game:BindToClose(PlayeManger.OnClose)
+
+end
+
+function PlayeManger.OnPlayerAdded(player)
+	player.CharacterAdded:Connect(function(character)
+		PlayeManger.OnCharacterAdded(player, character)
+	end)
+	
+	local success, data = LoadData(player)
+	sessionData[player.UserId] = success and data or {
+		Money = 0,
+		UnlockIds = {}
+	}
+	
+	local leaderstats = LeaderboardSetup(PlayeManger.GetMoney(player))
+	leaderstats.Parent = player 
+	
+	playerAdded:Fire(player)
+
+end
+
+function PlayeManger.OnCharacterAdded(player, character)
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid then
+		humanoid.Died:Connect(function()
+			wait(0)
+			player:LoadCharacter()
+		end)
+	end
+end
+
+function PlayeManger.GetMoney(player)
+	return sessionData[player.UserId].Money
+end
+
+
+function PlayeManger.SetMoney(player, value)
+	if value then
+		sessionData[player.UserId].Money = value
+
+		local leaderstats = player:FindFirstChild("leaderstats")
+		if leaderstats then
+			local money = leaderstats:FindFirstChild("Money")
+			if money then
+				money.Value = value
+			end
+		end
+	end
+end
+
+function PlayeManger.AddUnlockId(player, id)
+	local data = sessionData[player.UserId]
+	
+	if not table.find(data.UnlockIds, id) then
+		table.insert(data.UnlockIds, id)
+	end
+end
+
+function PlayeManger.GetUnlockIds(player)
+	return sessionData[player.UserId].UnlockIds
+end
+
+
+
+function PlayeManger.OnPlayerRemoving(player)
+	SaveData(player, sessionData[player.UserId])
+	playerRemvoing:Fire(player)
+end
+
+function PlayeManger.OnClose()
+	
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		coroutine.wrap(PlayeManger.OnPlayerRemoving(player))() 
+	end
+end
+
+
+
+return PlayeManger
